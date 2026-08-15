@@ -1,0 +1,8 @@
+{
+  "versao": "2026.08.14",
+  "notas": "Descrição curta do que mudou nesta versão — aparece no log do servidor quando alguém atualiza.",
+  "arquivos": {
+    "servidor.js": "https://raw.githubusercontent.com/SEU-USUARIO/SEU-REPOSITORIO/main/servidor.js",
+    "painel-rbo.html": "https://raw.githubusercontent.com/SEU-USUARIO/SEU-REPOSITORIO/main/painel-rbo.html"
+  }
+}
