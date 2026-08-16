@@ -1,6 +1,6 @@
 {
-  "versao": "2026.08.14",
-  "notas": "Descrição curta do que mudou nesta versão — aparece no log do servidor quando alguém atualiza.",
+  "versao": "2026.08.16",
+  "notas": "Nova aba \"Custos\" (Alimentos e Bebidas) — almoxarifado, fichas técnicas com CMV/CMO/markup e Matriz BCG de vendas.",
   "arquivos": {
     "servidor.js": "https://raw.githubusercontent.com/contatobarrosolucas/painel-ibis-chapeco/main/servidor.js",
     "painel-rbo.html": "https://raw.githubusercontent.com/contatobarrosolucas/painel-ibis-chapeco/main/painel-rbo.html"

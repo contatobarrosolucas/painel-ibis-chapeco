@@ -23,6 +23,11 @@
       data/estado.json, chamando POST /api/estado alguns instantes
       depois de qualquer mudança. Fechar a aba e abrir de novo (com o
       servidor no ar) volta exatamente de onde parou.
+   5b. A aba "Custos & CMV" (Alimentos e Bebidas — almoxarifado, fichas
+      técnicas, vendas/PDV) salva do mesmo jeito, só que no arquivo
+      separado data/custos-cmv.json, via POST /api/custos-cmv — mesma
+      lógica de "estado leve, arquivo próprio" já usada pras fotos de
+      Projetos.
    6. O servidor escuta em todos os endereços da máquina, não só
       localhost — por isso dá pra acessar de outro aparelho na mesma
       rede (ou via Tailscale) usando o IP que aparece no log ao
@@ -116,13 +121,13 @@ const MAX_BACKUPS_APP = 20; // bem menos que os 500 do estado.json — isso aqui
 // atualização de verdade é publicada no repositório. Comparação é por
 // string (funciona porque o formato é sempre zero-padded e cresce da
 // esquerda pra direita, igual data ISO).
-const VERSAO_ATUAL = '2026.08.14';
+const VERSAO_ATUAL = '2026.08.16';
 // troque pelo endereço RAW do seu repositório público no GitHub depois de
 // seguir o passo a passo (ESTADO_DO_PROJETO.md → "Atualização automática").
 // Pode ser sobrescrito por variável de ambiente também (útil se um dia
 // hospedar na nuvem e quiser configurar por lá em vez de editar o arquivo).
 const REPOSITORIO_ATUALIZACAO = process.env.URL_MANIFESTO_ATUALIZACAO
-  || 'https://raw.githubusercontent.com/SEU-USUARIO/SEU-REPOSITORIO/main/versao.json';
+  || 'https://raw.githubusercontent.com/contatobarrosolucas/painel-ibis-chapeco/main/versao.json';
 
 function log(msg){
   const hora = new Date().toLocaleString('pt-BR');
@@ -136,7 +141,7 @@ function dataDeHoje(){
 }
 
 function garantirPastas(){
-  [PMS_INBOX, NOTAS_INBOX, DATA_DIR, HISTORICO_DIR, PRACA_INBOX, DRE_INBOX, ALLSTRATEGY_INBOX, INBOX_UNIFICADO, FOTOS_DIR, ANEXOS_DIR, BACKUPS_DIR, APP_BACKUPS_DIR].forEach(p => {
+  [PMS_INBOX, NOTAS_INBOX, DATA_DIR, HISTORICO_DIR, PRACA_INBOX, DRE_INBOX, ALLSTRATEGY_INBOX, INBOX_UNIFICADO, FOTOS_DIR, ANEXOS_DIR, BACKUPS_DIR, APP_BACKUPS_DIR, BACKUPS_CMV_DIR].forEach(p => {
     if(!fs.existsSync(p)){ fs.mkdirSync(p, { recursive: true }); log(`Pasta criada: ${path.relative(ROOT, p)}/`); }
   });
 }
@@ -1048,6 +1053,7 @@ function processarTudo(){
 
 /* ---------- persistencia de estado (o que o usuario edita no painel) ---------- */
 const ESTADO_JSON = path.join(DATA_DIR, 'estado.json');
+const CUSTOS_CMV_JSON = path.join(DATA_DIR, 'custos-cmv.json'); // aba "Custos & CMV" (Alimentos e Bebidas) — almoxarifado, fichas técnicas, vendas/PDV. Arquivo separado do estado.json (mesma lógica das fotos: dado grande/próprio fica isolado, não engorda o POST principal).
 const TAMANHO_MAX_BODY = 5 * 1024 * 1024; // 5MB, generoso o bastante e protege contra corpo absurdo
 
 /* ---------- backup automático versionado (novo, 2026.08.14) ----------
@@ -1120,6 +1126,58 @@ function salvarEstado(req, res){
       res.end(JSON.stringify({ ok:true, salvoEm: dados.salvoEm, versao: dados.versao }));
     } catch(err){
       log(`⚠ falha ao salvar estado: ${err.message}`);
+      res.writeHead(400, { 'Content-Type':'application/json' });
+      res.end(JSON.stringify({ ok:false, erro: err.message }));
+    }
+  });
+}
+
+/* ---------- persistência da aba "Custos & CMV" (Alimentos e Bebidas — almoxarifado, fichas técnicas, vendas/PDV) ----------
+   Mesmo padrão de backup versionado do estado.json principal (rotação por
+   contagem, cópia da versão anterior antes de sobrescrever) — dado de
+   receita/ficha técnica é trabalho manual de horas, então vale a mesma
+   proteção contra clique errado ou corrupção. */
+const BACKUPS_CMV_DIR = path.join(DATA_DIR, 'backups-cmv');
+const MAX_BACKUPS_CMV = 200;
+
+function fazerBackupCustosCmv(){
+  if(!fs.existsSync(CUSTOS_CMV_JSON)) return; // nada ainda pra fazer backup (primeiro save de todos)
+  try{
+    garantirPastas();
+    if(!fs.existsSync(BACKUPS_CMV_DIR)) fs.mkdirSync(BACKUPS_CMV_DIR, { recursive:true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const sufixo = Math.random().toString(36).slice(2,6); // evita colisão se dois saves caírem no mesmo milissegundo
+    fs.copyFileSync(CUSTOS_CMV_JSON, path.join(BACKUPS_CMV_DIR, `custos-cmv-${timestamp}-${sufixo}.json`));
+    const arquivos = fs.readdirSync(BACKUPS_CMV_DIR).filter(n => n.startsWith('custos-cmv-') && n.endsWith('.json')).sort();
+    if(arquivos.length > MAX_BACKUPS_CMV){
+      arquivos.slice(0, arquivos.length - MAX_BACKUPS_CMV).forEach(nome => {
+        try{ fs.unlinkSync(path.join(BACKUPS_CMV_DIR, nome)); } catch(err){ /* ignora — não é crítico */ }
+      });
+    }
+  } catch(err){ log(`⚠ falha ao fazer backup de Custos & CMV: ${err.message}`); }
+}
+
+function salvarCustosCmv(req, res){
+  let tamanho = 0;
+  const pedacos = [];
+  req.on('data', chunk => {
+    tamanho += chunk.length;
+    if(tamanho > TAMANHO_MAX_BODY){ req.destroy(); return; }
+    pedacos.push(chunk);
+  });
+  req.on('end', () => {
+    try{
+      const texto = Buffer.concat(pedacos).toString('utf-8');
+      const dados = JSON.parse(texto); // valida que é JSON antes de gravar
+      fazerBackupCustosCmv(); // guarda a cópia anterior ANTES de sobrescrever
+      dados.salvoEm = new Date().toISOString();
+      garantirPastas();
+      fs.writeFileSync(CUSTOS_CMV_JSON, JSON.stringify(dados));
+      log(`Custos & CMV salvo (data/custos-cmv.json) — ${Math.round(texto.length/1024)}kb.`);
+      res.writeHead(200, { 'Content-Type':'application/json' });
+      res.end(JSON.stringify({ ok:true, salvoEm: dados.salvoEm }));
+    } catch(err){
+      log(`⚠ falha ao salvar Custos & CMV: ${err.message}`);
       res.writeHead(400, { 'Content-Type':'application/json' });
       res.end(JSON.stringify({ ok:false, erro: err.message }));
     }
@@ -1837,6 +1895,7 @@ async function verificarEAplicarAtualizacao(){
 const server = http.createServer((req, res) => {
   if(!autenticarRequisicao(req, res)) return; // corta aqui — nenhuma rota abaixo roda sem senha certa (quando configurada)
   if(req.method === 'POST' && req.url === '/api/estado'){ salvarEstado(req, res); return; }
+  if(req.method === 'POST' && req.url === '/api/custos-cmv'){ salvarCustosCmv(req, res); return; }
   if(req.method === 'POST' && req.url === '/api/foto'){ salvarFoto(req, res); return; }
   if(req.method === 'POST' && req.url === '/api/anexo'){ salvarAnexo(req, res); return; }
 

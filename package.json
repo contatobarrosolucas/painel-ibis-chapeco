@@ -1,0 +1,14 @@
+{
+  "name": "painel-rbo-ibis-chapeco",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Painel financeiro e operacional do Ibis Chapecó (Margem RBO, Recepção, Governança, Projetos) — Node.js puro, zero dependências externas.",
+  "main": "servidor.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node servidor.js"
+  },
+  "dependencies": {}
+}
